@@ -77,7 +77,46 @@ function buildFilterOptions() {
   $("f-week").append(...weeks.map((w) => new Option(`Week ${w}`, w)));
   const teams = [...new Set(S.index.flatMap((e) => [e.home, e.away]).filter(Boolean))].sort();
   $("f-team").append(...teams.map((t) => new Option(t, t)));
+
+  // Coverage, quarterback and receiver choices (only shown if this dataset has them)
+  const values = (k) => [...new Set(S.index.map((e) => e[k]).filter(Boolean))];
+  const covs = values("cov").sort();
+  $("f-cov").append(...covs.map((c) => new Option(pretty(c), c)));
+  $("f-cov").hidden = !covs.length;
+  const byLast = (a, b) => lastName(a).localeCompare(lastName(b)) || a.localeCompare(b);
+  const qbs = values("qb").sort(byLast), recs = values("rec").sort(byLast);
+  $("qb-list").replaceChildren(...qbs.map((n) => new Option(n)));
+  $("rec-list").replaceChildren(...recs.map((n) => new Option(n)));
+  $("people-row").hidden = !qbs.length && !recs.length;
+  for (const v of ["qb", "rec"]) {
+    $("f-sort").querySelector(`[value=${v}]`).hidden = !values(v).length;
+  }
+  $("f-sort").querySelector("[value=cov]").hidden = !covs.length;
+  // Every play the same type (e.g. the pass-only 2026 data)? Then the type filter is pointless.
+  $("f-type").hidden = new Set(S.index.map((e) => e.type)).size <= 1;
   refreshGameOptions();
+}
+
+function lastName(name) {
+  const parts = String(name ?? "").split(" ");
+  return parts.length > 1 ? parts.slice(1).join(" ") : parts[0];
+}
+
+// "COVER_3_ZONE" -> "Cover 3 Zone"
+function pretty(s) {
+  return String(s).toLowerCase().split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
+const SORTS = {
+  "yds-desc": (a, b) => (b.yds ?? -Infinity) - (a.yds ?? -Infinity),
+  "yds-asc": (a, b) => (a.yds ?? Infinity) - (b.yds ?? Infinity),
+  cov: (a, b) => nullsLast(a.cov, b.cov, (x, y) => x.localeCompare(y)),
+  qb: (a, b) => nullsLast(a.qb, b.qb, (x, y) => lastName(x).localeCompare(lastName(y)) || x.localeCompare(y)),
+  rec: (a, b) => nullsLast(a.rec, b.rec, (x, y) => lastName(x).localeCompare(lastName(y)) || x.localeCompare(y)),
+};
+function nullsLast(x, y, cmp) {
+  if (x == null || y == null) return (x == null) - (y == null);
+  return cmp(x, y);
 }
 
 function refreshGameOptions() {
@@ -98,6 +137,8 @@ function applyFilters() {
   const q = $("f-search").value.trim().toLowerCase();
   const week = $("f-week").value, team = $("f-team").value, game = $("f-game").value;
   const quarter = $("f-quarter").value, down = $("f-down").value, type = $("f-type").value;
+  const cov = $("f-cov").value, sort = $("f-sort").value;
+  const qb = $("f-qb").value.trim().toLowerCase(), rec = $("f-rec").value.trim().toLowerCase();
   const terms = q.split(/\s+/).filter(Boolean);
   S.filtered = S.index.filter((e) =>
     (!week || e.w === +week) &&
@@ -106,7 +147,11 @@ function applyFilters() {
     (!quarter || e.q === +quarter) &&
     (!down || e.dn === +down) &&
     (!type || e.type === type) &&
+    (!cov || e.cov === cov) &&
+    (!qb || (e.qb || "").toLowerCase().includes(qb)) &&
+    (!rec || (e.rec || "").toLowerCase().includes(rec)) &&
     (!terms.length || terms.every((t) => (e.desc || "").toLowerCase().includes(t))));
+  if (SORTS[sort]) S.filtered.sort(SORTS[sort]); // stable: ties stay in game order
   renderList();
 }
 
@@ -129,7 +174,8 @@ function renderList() {
     const q = e.q ? (e.q > 4 ? "OT" : `Q${e.q}`) : "";
     li.innerHTML = `<div class="meta"><span><b>${esc(e.off ?? "")}</b> ${esc(downText(e.dn, e.ytg))}</span>` +
       `<span>${esc(gameLabel(e))} · ${q} ${esc(e.clk ?? "")}</span></div>` +
-      `<div class="d">${esc(e.desc ?? `Play ${e.p}`)}</div>`;
+      `<div class="d">${esc(e.desc ?? `Play ${e.p}`)}</div>` +
+      summaryLine(e);
     li.addEventListener("click", () => selectPlay(e));
     frag.append(li);
   }
@@ -140,6 +186,15 @@ function renderList() {
     frag.append(li);
   }
   list.replaceChildren(frag);
+}
+
+// "Jared Goff → Josh Reynolds · 21 yds · Cover 6 Zone" under each play in the list
+function summaryLine(e) {
+  const parts = [];
+  if (e.qb || e.rec) parts.push(`${esc(e.qb ?? "?")} → ${esc(e.rec ?? "?")}`);
+  if (e.yds != null) parts.push(`<b>${e.yds} yds</b>`);
+  if (e.cov) parts.push(esc(pretty(e.cov)));
+  return parts.length ? `<div class="sum">${parts.join(" · ")}</div>` : "";
 }
 
 function esc(s) {
@@ -199,10 +254,12 @@ function renderInfo(e) {
   $("desc").textContent = e.desc ?? "";
   const tags = [];
   const tag = (k, v) => v != null && v !== "" && tags.push(`<span class="tag">${k} <b>${esc(v)}</b></span>`);
-  tag("Type", e.type);
-  tag("Formation", e.form);
-  tag("Coverage", e.cov);
-  tag("Man/Zone", e.mz);
+  if (!$("f-type").hidden) tag("Type", e.type);
+  tag("QB", e.qb);
+  tag("Receiver", e.rec);
+  tag("Formation", e.form != null ? pretty(e.form) : null);
+  tag("Coverage", e.cov != null ? pretty(e.cov) : null);
+  tag("Man/Zone", e.mz != null ? pretty(e.mz) : null);
   tag("Result", PASS_RESULTS[e.res] ?? e.res);
   tag("Yards", e.yds);
   tag("EPA", e.epa != null ? e.epa.toFixed(2) : null);
@@ -322,8 +379,11 @@ function teamStyles() {
 }
 
 // ---------- drawing ----------
+let lastWidth = 0;
 function resize() {
   const w = canvas.parentElement.clientWidth;
+  if (!w || w === lastWidth) return; // resizing clears the canvas, so only do it on a real change
+  lastWidth = w;
   K = w / (FIELD_LEN + 2 * PAD);
   const h = (FIELD_WID + 2 * PAD) * K;
   const dpr = window.devicePixelRatio || 1;
@@ -331,6 +391,7 @@ function resize() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   S.fieldCache = null;
+  draw(); // repaint right away so a cleared canvas is never shown
 }
 
 function drawFieldTo(c) {
@@ -439,7 +500,7 @@ function draw() {
 
   const play = S.play, t = S.t, styles = teamStyles();
   const nEnt = play.players.length, ball = ballEnt();
-  const R = Math.max(6, 1.1 * K);
+  const R = Math.max(8, 1.5 * K);
 
   // Trails
   if ($("opt-trails").checked) {
@@ -522,6 +583,27 @@ function draw() {
   }
   ctx.globalAlpha = 1;
 
+  // Name labels under each player (last name, or full name if it's one word)
+  if ($("opt-names").checked) {
+    ctx.font = `600 ${Math.max(10, R * 0.8)}px system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,.75)";
+    for (const d of S.drawn) {
+      const p = play.players[d.i];
+      if (!p.name || p.club === "football") continue;
+      const parts = p.name.split(" ");
+      const label = parts.length > 1 ? parts.slice(1).join(" ") : p.name;
+      ctx.globalAlpha = d.ghost ? 0.45 : 1;
+      ctx.fillStyle = S.highlight === d.i ? "#ffdd00" : "#fff";
+      ctx.strokeText(label, d.px, d.py + R + 2);
+      ctx.fillText(label, d.px, d.py + R + 2);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // Ball on top
   if (ball >= 0) {
     const pos = position(ball, t);
@@ -543,7 +625,7 @@ function draw() {
 // ---------- tooltip & picking ----------
 function pick() {
   if (!S.mouse || !S.drawn) return null;
-  const R = Math.max(6, 1.1 * K) * 1.3;
+  const R = Math.max(8, 1.5 * K) * 1.3;
   let best = null, bestD = R;
   for (const d of S.drawn) {
     const dist = Math.hypot(d.px - S.mouse.x, d.py - S.mouse.y);
@@ -615,7 +697,7 @@ function frame(ts) {
 }
 
 // ---------- events ----------
-for (const id of ["f-search", "f-quarter", "f-down", "f-type", "f-game"]) {
+for (const id of ["f-search", "f-quarter", "f-down", "f-type", "f-game", "f-cov", "f-sort", "f-qb", "f-rec"]) {
   $(id).addEventListener("input", applyFilters);
 }
 for (const id of ["f-week", "f-team"]) {

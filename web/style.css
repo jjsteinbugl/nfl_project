@@ -9,6 +9,7 @@
   --sidebar: 380px;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex;
@@ -56,6 +57,8 @@ input[type=search]:focus, select:focus { outline: 2px solid var(--accent); outli
 #play-list .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
 #play-list .meta b { color: var(--text); font-weight: 600; }
 #play-list .d { margin-top: 3px; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#play-list .sum { margin-top: 3px; font-size: 12px; color: var(--muted); }
+#play-list .sum b { color: var(--text); font-weight: 600; }
 #play-list .more { color: var(--muted); font-size: 12px; cursor: default; }
 
 /* Main */

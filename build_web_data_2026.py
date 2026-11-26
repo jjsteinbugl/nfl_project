@@ -25,7 +25,7 @@ import pandas as pd
 
 from build_web_data import OUT_DIR, clean, write_gz
 
-SOURCE = "2023 NFL season · pass plays · Big Data Bowl 2026"
+SOURCE = "2023 NFL season"
 
 
 def build_play(inp: pd.DataFrame, out: pd.DataFrame, meta) -> dict:
@@ -149,7 +149,12 @@ def main():
             play = build_play(df, out_groups.get((gid, pid), empty), m)
             write_gz(OUT_DIR / "plays" / str(gid) / f"{pid}.json.gz", play)
             week = m["week"] if m is not None and "week" in m.index else w
-            index.append(index_entry(gid, pid, week, play["nFrames"], m))
+            entry = index_entry(gid, pid, week, play["nFrames"], m)
+            def role_name(role):
+                names = df.loc[df["player_role"] == role, "player_name"]
+                return clean(names.iat[0]) if len(names) else None
+            entry["qb"], entry["rec"] = role_name("Passer"), role_name("Targeted Receiver")
+            index.append(entry)
 
     index.sort(key=lambda e: (e["g"], e["p"]))
     write_gz(OUT_DIR / "index.json.gz", {"source": SOURCE, "plays": index})

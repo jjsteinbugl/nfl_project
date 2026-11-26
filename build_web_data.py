@@ -25,7 +25,7 @@ import pandas as pd
 from load_data import get_data_dir, load_tables
 
 OUT_DIR = Path(__file__).resolve().parent / "web" / "data"
-SOURCE = "2022 NFL season · weeks 1–9 · Big Data Bowl 2025"
+SOURCE = "2022 NFL season · weeks 1–9"
 TRACKING_COLS = [
     "gameId", "playId", "nflId", "displayName", "frameId", "frameType",
     "jerseyNumber", "club", "playDirection", "x", "y", "s", "o", "event",
