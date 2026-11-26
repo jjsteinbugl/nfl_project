@@ -37,10 +37,32 @@ Pass `standardize=False` to keep the raw coordinates.
 The same code runs in a Kaggle notebook, where it finds `/kaggle/input/...` automatically.
 To use a different folder, set the `NFL_DATA_DIR` environment variable.
 
+## Play viewer website
+
+A local website for picking a play and watching all 22 players and the ball move, frame by frame.
+
+```bash
+python build_web_data.py   # one-time: converts the tracking CSVs (~10-30 min for all 9 weeks)
+python serve.py            # opens http://localhost:8000
+```
+
+`build_web_data.py --weeks 1` builds a single week for a quick start; later runs add more weeks to the same index.
+The output goes to `web/data/` (git-ignored): one small compressed file per play, plus a searchable index.
+
+In the viewer:
+- Filter plays by week, team, game, quarter, down, pass/run, or search the play descriptions.
+- Play/pause (Space), step frames (←/→), scrub, change speed, or jump to the snap. Yellow ticks on the scrubber mark events (snap in red).
+- Hover a player for name, position, and speed; click to highlight their path.
+- Options: flip plays so the offense always moves right, trails, facing direction, color by offense/defense.
+- The URL tracks the play (`#play=<gameId>-<playId>`), so links are shareable; add `&f=<frame>` to open at a given frame.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `download_data.py` | Downloads and unzips the competition data via the Kaggle API |
 | `load_data.py` | Finds the data folder and loads the tables and tracking data |
+| `build_web_data.py` | Converts tracking data into per-play files for the website |
+| `serve.py` | Serves the play viewer locally |
+| `web/` | The play viewer website (HTML/CSS/JS, no build step) |
 | `requirements.txt` | Python dependencies |

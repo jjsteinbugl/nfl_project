@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFL Play Viewer · 2022 Tracking Data</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside id="sidebar">
+    <header>
+      <h1>Play Viewer</h1>
+      <p class="sub">2022 NFL season · weeks 1–9 · Big Data Bowl 2025</p>
+    </header>
+    <div class="filters">
+      <input id="f-search" type="search" placeholder="Search descriptions (e.g. Mahomes, touchdown)">
+      <div class="row">
+        <select id="f-week"><option value="">All weeks</option></select>
+        <select id="f-team"><option value="">All teams</option></select>
+      </div>
+      <select id="f-game"><option value="">All games</option></select>
+      <div class="row">
+        <select id="f-quarter">
+          <option value="">Any quarter</option>
+          <option value="1">Q1</option><option value="2">Q2</option>
+          <option value="3">Q3</option><option value="4">Q4</option><option value="5">OT</option>
+        </select>
+        <select id="f-down">
+          <option value="">Any down</option>
+          <option value="1">1st</option><option value="2">2nd</option>
+          <option value="3">3rd</option><option value="4">4th</option>
+        </select>
+        <select id="f-type">
+          <option value="">Any type</option>
+          <option value="pass">Pass</option><option value="run">Run</option>
+        </select>
+      </div>
+      <div class="count" id="count">Loading plays…</div>
+    </div>
+    <ol id="play-list"></ol>
+  </aside>
+
+  <main>
+    <section id="info">
+      <div id="matchup" class="matchup">Pick a play from the list</div>
+      <div id="situation" class="situation"></div>
+      <p id="desc" class="desc"></p>
+      <div id="tags" class="tags"></div>
+    </section>
+
+    <div id="field-wrap">
+      <canvas id="field"></canvas>
+      <div id="tooltip" hidden></div>
+      <div id="overlay" class="overlay">Select a play to start the animation.</div>
+    </div>
+
+    <section id="controls">
+      <button id="btn-play" title="Play / pause (Space)" disabled>▶</button>
+      <button id="btn-back" title="Back one frame (←)" disabled>⏮</button>
+      <button id="btn-fwd" title="Forward one frame (→)" disabled>⏭</button>
+      <div class="scrub">
+        <input id="scrubber" type="range" min="0" max="0" step="0.01" value="0" disabled>
+        <div id="ticks"></div>
+      </div>
+      <span id="clock" class="clock">–</span>
+      <select id="speed" title="Playback speed">
+        <option value="0.25">0.25×</option><option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option><option value="2">2×</option>
+      </select>
+    </section>
+
+    <section id="options">
+      <button id="btn-snap" disabled>Jump to snap</button>
+      <label><input type="checkbox" id="opt-flip"> Offense always moves right</label>
+      <label><input type="checkbox" id="opt-trails" checked> Trails</label>
+      <label><input type="checkbox" id="opt-facing" checked> Facing direction</label>
+      <label><input type="checkbox" id="opt-sides"> Color by offense / defense</label>
+      <span id="event-label" class="event-label"></span>
+    </section>
+    <p class="hint">Hover a player for details · click to highlight · Space play/pause · ←/→ step a frame</p>
+  </main>
+
+  <script src="teams.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
