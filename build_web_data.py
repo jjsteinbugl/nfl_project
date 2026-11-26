@@ -25,6 +25,7 @@ import pandas as pd
 from load_data import get_data_dir, load_tables
 
 OUT_DIR = Path(__file__).resolve().parent / "web" / "data"
+SOURCE = "2022 NFL season · weeks 1–9 · Big Data Bowl 2025"
 TRACKING_COLS = [
     "gameId", "playId", "nflId", "displayName", "frameId", "frameType",
     "jerseyNumber", "club", "playDirection", "x", "y", "s", "o", "event",
@@ -182,13 +183,14 @@ def main():
                 print(f"  {n:,}/{groups.ngroups:,}", flush=True)
         del tr, groups
 
-    # Merge with an existing index so building weeks separately accumulates.
+    # Merge with an existing index of this same dataset so building weeks separately accumulates.
     idx_path = OUT_DIR / "index.json.gz"
     if args.weeks and idx_path.exists():
         old = json.loads(gzip.decompress(idx_path.read_bytes()))
-        index = [e for e in old if e["w"] not in set(weeks)] + index
+        if isinstance(old, dict) and old.get("source") == SOURCE:
+            index = [e for e in old["plays"] if e["w"] not in set(weeks)] + index
     index.sort(key=lambda e: (e["g"], e["p"]))
-    write_gz(idx_path, index)
+    write_gz(idx_path, {"source": SOURCE, "plays": index})
     print(f"Done: {len(index):,} plays indexed in {OUT_DIR}")
 
 

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NFL Play Viewer · 2022 Tracking Data</title>
+  <title>NFL Play Viewer</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <aside id="sidebar">
     <header>
       <h1>Play Viewer</h1>
-      <p class="sub">2022 NFL season · weeks 1–9 · Big Data Bowl 2025</p>
+      <p class="sub" id="subtitle">NFL player tracking data</p>
     </header>
     <div class="filters">
       <input id="f-search" type="search" placeholder="Search descriptions (e.g. Mahomes, touchdown)">
@@ -78,6 +78,7 @@
       <span id="event-label" class="event-label"></span>
     </section>
     <p class="hint">Hover a player for details · click to highlight · Space play/pause · ←/→ step a frame</p>
+    <p class="hint" id="data-note" hidden></p>
   </main>
 
   <script src="teams.js"></script>

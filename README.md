@@ -49,6 +49,22 @@ python serve.py            # opens http://localhost:8000
 `build_web_data.py --weeks 1` builds a single week for a quick start; later runs add more weeks to the same index.
 The output goes to `web/data/` (git-ignored): one small compressed file per play, plus a searchable index.
 
+### Using the 2026 data instead (2023 season)
+
+The 2025 data has since been removed from Kaggle. The viewer can also show the
+[Big Data Bowl 2026](https://www.kaggle.com/competitions/nfl-big-data-bowl-2026-analytics) data:
+
+```bash
+python build_web_data_2026.py --data-dir "path/to/114239_nfl_competition_files_published_analytics_final"
+python serve.py
+```
+
+That data is more limited: pass plays only (~14,000 over 18 weeks), only the players involved in the pass,
+tracked from the snap to the throw, and after the throw only the 1–8 players nearest the ball. There's no ball
+tracking, so the viewer estimates the ball's flight as a straight line to its recorded landing spot (✕), and
+players no longer tracked are shown faded where they were last seen. Players are labeled by position since
+there are no jersey numbers. Each build replaces whichever dataset was in `web/data/` before.
+
 In the viewer:
 - Filter plays by week, team, game, quarter, down, pass/run, or search the play descriptions.
 - Play/pause (Space), step frames (←/→), scrub, change speed, or jump to the snap. Yellow ticks on the scrubber mark events (snap in red).
@@ -62,7 +78,8 @@ In the viewer:
 |---|---|
 | `download_data.py` | Downloads and unzips the competition data via the Kaggle API |
 | `load_data.py` | Finds the data folder and loads the tables and tracking data |
-| `build_web_data.py` | Converts tracking data into per-play files for the website |
+| `build_web_data.py` | Converts the 2025 (2022 season) tracking data into per-play files for the website |
+| `build_web_data_2026.py` | Same, for the 2026 (2023 season) data |
 | `serve.py` | Serves the play viewer locally |
 | `web/` | The play viewer website (HTML/CSS/JS, no build step) |
 | `requirements.txt` | Python dependencies |

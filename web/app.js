@@ -44,7 +44,9 @@ async function loadGz(url) {
 
 async function init() {
   try {
-    S.index = await loadGz("data/index.json.gz");
+    const idx = await loadGz("data/index.json.gz");
+    S.index = Array.isArray(idx) ? idx : idx.plays;
+    if (idx.source) $("subtitle").textContent = idx.source;
   } catch (err) {
     const fileUrl = location.protocol === "file:";
     $("count").textContent = fileUrl
@@ -171,6 +173,15 @@ async function selectPlay(e, startFrame = null) {
   $("overlay").hidden = true;
   for (const id of ["btn-play", "btn-back", "btn-fwd", "btn-snap", "scrubber"]) $(id).disabled = false;
   $("scrubber").max = play.nFrames - 1;
+  S.anchor = play.anchor ?? (play.snap != null ? { f: play.snap, label: "snap" } : null);
+  $("btn-snap").textContent = `Jump to ${S.anchor?.label ?? "snap"}`;
+  $("btn-snap").disabled = !S.anchor;
+  const estimated = play.players.some((p) => p.estimated);
+  $("data-note").hidden = !estimated;
+  $("data-note").textContent = estimated
+    ? "This dataset has no ball tracking: the ball is shown with the passer, then on a straight line to its " +
+      "recorded landing spot (✕). Faded players weren't tracked after the throw and are shown where they were last seen."
+    : "";
   renderTicks();
   if (startFrame != null) { setFrame(startFrame); setPlaying(false); }
   else setPlaying(true);
@@ -199,7 +210,7 @@ function renderInfo(e) {
 }
 
 function renderTicks() {
-  const { events, nFrames, snap } = S.play;
+  const play = S.play, { events, nFrames, snap } = play;
   const ticks = $("ticks");
   ticks.replaceChildren();
   const denom = Math.max(1, nFrames - 1);
@@ -208,7 +219,7 @@ function renderTicks() {
     const span = document.createElement("span");
     span.style.left = `calc(8px + (100% - 16px) * ${ev.f / denom})`;
     span.title = prettyEvent(ev.e);
-    if (ev.f === snap) span.className = "snap";
+    if (ev.f === (play.anchor?.f ?? snap)) span.className = "snap";
     ticks.append(span);
   }
 }
@@ -257,6 +268,14 @@ function position(ent, t) {
   if (x == null || y == null) return null;
   if (flipped()) { x = FIELD_LEN - x; y = FIELD_WID - y; }
   return [x, y];
+}
+
+// Last tracked position at or before frame t (for players whose tracking stops at the throw).
+function lastSeen(ent, t) {
+  for (let f = Math.min(Math.floor(t), S.play.nFrames - 1); f >= 0; f--) {
+    if (S.play.x[ent][f] != null) return position(ent, f);
+  }
+  return null;
 }
 
 function ballEnt() {
@@ -378,12 +397,15 @@ function drawFieldTo(c) {
 }
 
 function drawScrimmage(c) {
-  const b = ballEnt();
-  if (b < 0) return;
-  const snapT = S.play.snap ?? 0;
-  const pos = position(b, snapT);
-  if (!pos) return;
-  const los = pos[0];
+  let los;
+  if (S.play.los != null) {
+    los = flipped() ? FIELD_LEN - S.play.los : S.play.los;
+  } else {
+    const b = ballEnt();
+    const pos = b >= 0 ? position(b, S.play.snap ?? 0) : null;
+    if (!pos) return;
+    los = pos[0];
+  }
   const [, yTop] = toPx(0, FIELD_WID), [, yBot] = toPx(0, 0);
   const line = (x, color) => {
     const [px] = toPx(x, 0);
@@ -443,18 +465,33 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // Ball landing spot (2026 data)
+  if (play.ballLand) {
+    let [lx, ly] = play.ballLand;
+    if (flipped()) { lx = FIELD_LEN - lx; ly = FIELD_WID - ly; }
+    const [px, py] = toPx(lx, ly), d = R * 0.6;
+    ctx.strokeStyle = "#ffdd00";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(px - d, py - d); ctx.lineTo(px + d, py + d);
+    ctx.moveTo(px + d, py - d); ctx.lineTo(px - d, py + d);
+    ctx.stroke();
+  }
+
   // Players
   const facing = $("opt-facing").checked;
   S.drawn = [];
   for (let i = 0; i < nEnt; i++) {
     if (i === ball) continue;
-    const p = play.players[i], pos = position(i, t);
+    const p = play.players[i];
+    let pos = position(i, t), ghost = false;
+    if (!pos) { pos = lastSeen(i, t); ghost = true; } // no longer tracked: hold at last spot
     if (!pos) continue;
     const [px, py] = toPx(pos[0], pos[1]);
     const st = styles[p.club] ?? { fill: "#999", stroke: "#fff", text: "#000" };
-    S.drawn.push({ i, px, py });
-    ctx.globalAlpha = S.highlight != null && S.highlight !== i ? 0.55 : 1;
-    if (facing) {
+    S.drawn.push({ i, px, py, ghost });
+    ctx.globalAlpha = ghost ? 0.3 : S.highlight != null && S.highlight !== i ? 0.55 : 1;
+    if (facing && !ghost) {
       let o = sampleAngle(i, t);
       if (o != null) {
         if (flipped()) o += 180;
@@ -474,12 +511,13 @@ function draw() {
     ctx.lineWidth = S.highlight === i ? 3 : 1.5;
     ctx.strokeStyle = S.highlight === i ? "#ffdd00" : st.stroke;
     ctx.stroke();
-    if (p.jersey != null) {
+    const label = p.jersey ?? p.pos; // 2026 data has no jersey numbers: show position
+    if (label != null) {
       ctx.fillStyle = st.text;
-      ctx.font = `700 ${R * 1.05}px system-ui, sans-serif`;
+      ctx.font = `700 ${String(label).length > 2 ? R * 0.75 : R * 1.0}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(p.jersey, px, py + R * 0.06);
+      ctx.fillText(label, px, py + R * 0.06);
     }
   }
   ctx.globalAlpha = 1;
@@ -520,11 +558,13 @@ function updateTooltip() {
   if (!hit) { tip.hidden = true; canvas.style.cursor = "default"; return; }
   canvas.style.cursor = "pointer";
   const p = S.play.players[hit.i];
-  const s = sample(S.play.s, hit.i, S.t, 100);
+  const s = hit.ghost ? null : sample(S.play.s, hit.i, S.t, 100);
   const speed = s != null ? `${s.toFixed(1)} yd/s · ${(s * MPS_TO_MPH).toFixed(1)} mph` : "";
+  const detail = [p.jersey != null ? `#${p.jersey}` : null, p.pos, p.club, p.role].filter(Boolean).map(esc).join(" · ");
   tip.innerHTML = p.club === "football"
-    ? `<div class="n">Football</div>${speed}`
-    : `<div class="n">${esc(p.name ?? "Unknown")}</div>#${p.jersey ?? "?"} · ${esc(p.pos ?? "")} · ${esc(p.club)}<br>${speed}`;
+    ? `<div class="n">${esc(p.name ?? "Football")}</div>${speed}`
+    : `<div class="n">${esc(p.name ?? "Unknown")}</div>${detail}<br>` +
+      (hit.ghost ? "Not tracked after the throw (last seen here)" : speed);
   tip.style.left = `${hit.px}px`;
   tip.style.top = `${hit.py}px`;
   tip.hidden = false;
@@ -546,11 +586,10 @@ function setFrame(t) {
 function updateHud() {
   if (!S.play) { $("clock").textContent = "–"; return; }
   $("scrubber").value = S.t;
-  const snap = S.play.snap;
   const f = Math.floor(S.t);
-  if (snap != null) {
-    const dt = (S.t - snap) / FPS;
-    $("clock").textContent = dt < 0 ? `snap −${(-dt).toFixed(1)}s` : `snap +${dt.toFixed(1)}s`;
+  if (S.anchor) {
+    const dt = (S.t - S.anchor.f) / FPS, label = S.anchor.label;
+    $("clock").textContent = dt < 0 ? `${label} −${(-dt).toFixed(1)}s` : `${label} +${dt.toFixed(1)}s`;
   } else {
     $("clock").textContent = `${(S.t / FPS).toFixed(1)}s`;
   }
@@ -585,7 +624,7 @@ for (const id of ["f-week", "f-team"]) {
 $("btn-play").addEventListener("click", () => setPlaying(!S.playing));
 $("btn-back").addEventListener("click", () => { setPlaying(false); setFrame(Math.ceil(S.t) - 1); });
 $("btn-fwd").addEventListener("click", () => { setPlaying(false); setFrame(Math.floor(S.t) + 1); });
-$("btn-snap").addEventListener("click", () => { if (S.play?.snap != null) setFrame(S.play.snap); });
+$("btn-snap").addEventListener("click", () => { if (S.anchor) setFrame(S.anchor.f); });
 $("scrubber").addEventListener("input", (e) => { setPlaying(false); setFrame(+e.target.value); });
 $("speed").addEventListener("input", (e) => { S.speed = +e.target.value; });
 for (const id of ["opt-flip"]) $(id).addEventListener("input", () => { S.fieldCache = null; });
