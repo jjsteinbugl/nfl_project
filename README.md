@@ -65,6 +65,13 @@ tracking, so the viewer estimates the ball's flight as a straight line to its re
 players no longer tracked are shown faded where they were last seen. Players are labeled by position since
 there are no jersey numbers. Each build replaces whichever dataset was in `web/data/` before.
 
+With the 2026 data, the page also analyzes **QB decisions**: for each pass it measures how open every
+route runner was when the ball would arrive (distance to the nearest coverage defender, projected from
+speed and direction at the throw), compares the target to the most open option, and labels the decision
+(most open, open target, chose depth, nobody open, missed an open receiver). Below the field it compares
+these across quarterbacks, coverages, downs and time to throw, for whatever plays match the filters.
+The method and its limits are described under "How this is measured" on the page.
+
 In the viewer:
 - Filter plays by week, team, game, quarter, down, pass/run, or search the play descriptions.
 - Play/pause (Space), step frames (←/→), scrub, change speed, or jump to the snap. Yellow ticks on the scrubber mark events (snap in red).
@@ -81,5 +88,5 @@ In the viewer:
 | `build_web_data.py` | Converts the 2025 (2022 season) tracking data into per-play files for the website |
 | `build_web_data_2026.py` | Same, for the 2026 (2023 season) data |
 | `serve.py` | Serves the play viewer locally |
-| `web/` | The play viewer website (HTML/CSS/JS, no build step) |
+| `web/` | The play viewer website (HTML/CSS/JS, no build step); `analysis.js` holds the QB decision analysis |
 | `requirements.txt` | Python dependencies |

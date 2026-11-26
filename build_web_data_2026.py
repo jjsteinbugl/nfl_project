@@ -27,6 +27,78 @@ from build_web_data import OUT_DIR, clean, write_gz
 
 SOURCE = "2023 NFL season"
 
+# ---- QB decision analysis --------------------------------------------------
+# Openness = distance from a route runner to the nearest coverage defender when the ball
+# would arrive, projecting everyone forward from their speed and direction at the throw.
+# Air time ≈ 0.08 s + 0.049 s per yard of throw distance (fitted on this data, r = 0.84).
+# Projection is capped at 1 s: past that, defenders react, and the capped projection
+# best matched the separation actually measured at arrival (r = 0.86 on weeks 1-3).
+AIR_BASE, AIR_PER_YARD, PROJ_CAP = 0.08, 0.049, 1.0
+OPEN = 3.0       # yards of projected separation to call a receiver "open"
+MARGIN = 1.0     # within this many yards of the most open receiver counts as "most open"
+SHALLOWER = 2.0  # an alternative this many yards shallower than the target is a "shorter option"
+
+DECISIONS = {
+    "most_open": "Threw to the most open receiver",
+    "open_target": "Target was open (another was slightly more open)",
+    "all_covered": "Nobody was open: threw into a tight window",
+    "chose_depth": "Passed up an open shorter option for a deeper throw",
+    "missed": "Missed a more open receiver",
+}
+
+
+def analyze_decision(inp: pd.DataFrame, direction: str, los):
+    """Openness of every route runner at the throw, and how the QB's choice compares."""
+    last = inp[inp["frame_id"] == inp["frame_id"].max()]
+    qb = last[last["player_role"] == "Passer"]
+    rr = last[last["player_role"].isin(["Targeted Receiver", "Other Route Runner"])]
+    de = last[last["player_role"] == "Defensive Coverage"]
+    if qb.empty or de.empty or not (rr["player_role"] == "Targeted Receiver").any() or los is None:
+        return None
+    qx, qy = qb["x"].iat[0], qb["y"].iat[0]
+    sign = 1 if direction == "right" else -1
+
+    def moved(df, t):
+        rad = np.radians(df["dir"].to_numpy())
+        return df["x"].to_numpy() + df["s"].to_numpy() * np.sin(rad) * t, \
+               df["y"].to_numpy() + df["s"].to_numpy() * np.cos(rad) * t
+
+    recs = []
+    for _, r in rr.iterrows():
+        sep_throw = np.hypot(de["x"] - r["x"], de["y"] - r["y"]).min()
+        air = float(np.clip(AIR_BASE + AIR_PER_YARD * np.hypot(r["x"] - qx, r["y"] - qy), 0.3, 3.0))
+        t = min(air, PROJ_CAP)
+        rad = np.radians(r["dir"])
+        rx, ry = r["x"] + r["s"] * np.sin(rad) * t, r["y"] + r["s"] * np.cos(rad) * t
+        dx, dy = moved(de, t)
+        recs.append({
+            "id": int(r["nfl_id"]),
+            "name": clean(r["player_name"]),
+            "pos": clean(r["player_position"]),
+            "target": r["player_role"] == "Targeted Receiver",
+            "sepThrow": round(float(sep_throw), 2),
+            "sep": round(float(np.hypot(dx - rx, dy - ry).min()), 2),
+            "depth": round(float((r["x"] - los) * sign), 1),
+        })
+    recs.sort(key=lambda r: -r["sep"])
+    best, tgt = recs[0], next(r for r in recs if r["target"])
+
+    if tgt["sep"] >= best["sep"] - MARGIN:
+        dec = "most_open"
+    elif tgt["sep"] >= OPEN:
+        dec = "open_target"
+    else:
+        alts = [r for r in recs if not r["target"] and r["sep"] >= tgt["sep"] + MARGIN and r["sep"] >= OPEN]
+        if not alts:
+            dec = "all_covered"
+        elif any(a["depth"] >= tgt["depth"] - SHALLOWER for a in alts):
+            dec = "missed"
+        else:
+            dec = "chose_depth"
+    for r in recs:
+        r["mostOpen"] = r is best
+    return {"receivers": recs, "decision": dec, "timeToThrow": round(int(inp["frame_id"].max()) / 10, 1)}
+
 
 def build_play(inp: pd.DataFrame, out: pd.DataFrame, meta) -> dict:
     n_in = int(inp["frame_id"].max())
@@ -101,6 +173,7 @@ def build_play(inp: pd.DataFrame, out: pd.DataFrame, meta) -> dict:
         "los": clean(inp["absolute_yardline_number"].iat[0]),
         "ballLand": list(land) if land[0] is not None else None,
         "events": events,
+        "analysis": analyze_decision(inp, direction, clean(inp["absolute_yardline_number"].iat[0])),
         "players": players,
         "x": grid(xs, 100), "y": grid(ys, 100), "s": grid(ss, 100), "o": grid(os_, 1),
     }
@@ -154,10 +227,19 @@ def main():
                 names = df.loc[df["player_role"] == role, "player_name"]
                 return clean(names.iat[0]) if len(names) else None
             entry["qb"], entry["rec"] = role_name("Passer"), role_name("Targeted Receiver")
+            a = play["analysis"]
+            if a:
+                tgt = next(r for r in a["receivers"] if r["target"])
+                entry.update(dec=a["decision"], tsep=tgt["sep"], msep=a["receivers"][0]["sep"],
+                             tdep=tgt["depth"], ttt=a["timeToThrow"], nrr=len(a["receivers"]))
             index.append(entry)
 
     index.sort(key=lambda e: (e["g"], e["p"]))
-    write_gz(OUT_DIR / "index.json.gz", {"source": SOURCE, "plays": index})
+    write_gz(OUT_DIR / "index.json.gz", {
+        "source": SOURCE, "plays": index,
+        "analysis": {"decisions": DECISIONS, "open": OPEN, "margin": MARGIN, "shallower": SHALLOWER,
+                     "projCap": PROJ_CAP},
+    })
     print(f"Done: {len(index):,} plays in {OUT_DIR}")
 
 

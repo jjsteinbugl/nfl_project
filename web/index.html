@@ -50,8 +50,10 @@
           <option value="cov">Sort: coverage</option>
           <option value="qb">Sort: quarterback</option>
           <option value="rec">Sort: receiver</option>
+          <option value="lost">Sort: most open receiver missed by</option>
         </select>
       </div>
+      <select id="f-dec" hidden><option value="">Any QB decision</option></select>
       <div class="count" id="count">Loading plays…</div>
     </div>
     <ol id="play-list"></ol>
@@ -91,15 +93,66 @@
       <label><input type="checkbox" id="opt-flip"> Offense always moves right</label>
       <label><input type="checkbox" id="opt-names" checked> Names</label>
       <label><input type="checkbox" id="opt-trails" checked> Trails</label>
+      <label title="Each receiver's distance to the nearest defender, live until the throw"><input type="checkbox" id="opt-sep" checked> Separation</label>
       <label><input type="checkbox" id="opt-facing" checked> Facing direction</label>
       <label><input type="checkbox" id="opt-sides"> Color by offense / defense</label>
       <span id="event-label" class="event-label"></span>
     </section>
     <p class="hint">Hover a player for details · click to highlight · Space play/pause · ←/→ step a frame</p>
     <p class="hint" id="data-note" hidden></p>
+
+    <section id="play-analysis" class="card" hidden>
+      <h2>QB decision on this play</h2>
+      <div id="pa-verdict" class="verdict"></div>
+      <table id="pa-table" class="data"></table>
+      <p class="hint">Hover a row to highlight that receiver on the field.</p>
+    </section>
+
+    <section id="league" class="card" hidden>
+      <h2>QB decision-making across the league</h2>
+      <p class="hint" id="lg-scope"></p>
+      <div id="lg-tiles" class="tiles"></div>
+      <ul id="lg-findings" class="findings"></ul>
+      <div class="chart-grid">
+        <div>
+          <h3>Completion rate by how open the target was</h3>
+          <div id="lg-sepchart" class="vbars"></div>
+          <p class="axis-note">Target's projected separation at arrival (yards)</p>
+        </div>
+        <div>
+          <h3>Where the ball went</h3>
+          <div id="lg-decisions" class="hbars"></div>
+        </div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button data-tab="qb" class="active">By quarterback</button>
+        <button data-tab="cov">By coverage</button>
+        <button data-tab="down">By down</button>
+        <button data-tab="ttt">By time to throw</button>
+      </div>
+      <p class="hint" id="lg-table-note"></p>
+      <div class="table-wrap"><table id="lg-table" class="data sortable"></table></div>
+      <details class="method">
+        <summary>How this is measured</summary>
+        <p><b>Openness</b> is the distance from a receiver to the nearest coverage defender when the ball would
+          arrive. It starts from everyone's position, speed and direction at the throw and projects them forward
+          for the ball's estimated air time (about 0.08 s + 0.05 s per yard, fitted on this data), capped at
+          1 second since defenders react after that. Checked against tracked positions at arrival, this projection
+          matches the real separation closely (correlation 0.86).</p>
+        <p><b>Decisions:</b> a target within <span data-cfg="margin"></span> yd of the most open receiver counts as
+          "most open". A target with at least <span data-cfg="open"></span> yd is "open". When the target wasn't
+          open, an open alternative (≥ <span data-cfg="open"></span> yd, and ≥ <span data-cfg="margin"></span> yd more open)
+          at a similar or greater depth is a <b>missed open receiver</b>; if the only open alternatives were
+          at least <span data-cfg="shallower"></span> yd shallower, the QB <b>chose depth</b> over a checkdown.</p>
+        <p><b>Limits:</b> this sees only route runners and coverage defenders (no pass rush), so it can't tell when
+          pressure forced the throw, a receiver hadn't turned around yet, or the play call dictated the read.
+          Treat it as a guide to interesting plays, not a final grade.</p>
+      </details>
+    </section>
   </main>
 
   <script src="teams.js"></script>
   <script src="app.js"></script>
+  <script src="analysis.js"></script>
 </body>
 </html>

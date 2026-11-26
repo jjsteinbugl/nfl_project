@@ -47,6 +47,7 @@ async function init() {
     const idx = await loadGz("data/index.json.gz");
     S.index = Array.isArray(idx) ? idx : idx.plays;
     if (idx.source) $("subtitle").textContent = idx.source;
+    S.analysisCfg = idx.analysis ?? null;
   } catch (err) {
     const fileUrl = location.protocol === "file:";
     $("count").textContent = fileUrl
@@ -57,6 +58,7 @@ async function init() {
     return;
   }
   buildFilterOptions();
+  initAnalysis();
   applyFilters();
   // Deep link: #play=<gameId>-<playId>[&f=<frame>] (frame link opens paused there)
   const m = location.hash.match(/play=(\d+)-(\d+)(?:&f=(\d+))?/);
@@ -113,6 +115,7 @@ const SORTS = {
   cov: (a, b) => nullsLast(a.cov, b.cov, (x, y) => x.localeCompare(y)),
   qb: (a, b) => nullsLast(a.qb, b.qb, (x, y) => lastName(x).localeCompare(lastName(y)) || x.localeCompare(y)),
   rec: (a, b) => nullsLast(a.rec, b.rec, (x, y) => lastName(x).localeCompare(lastName(y)) || x.localeCompare(y)),
+  lost: (a, b) => ((b.msep ?? 0) - (b.tsep ?? 0)) - ((a.msep ?? 0) - (a.tsep ?? 0)),
 };
 function nullsLast(x, y, cmp) {
   if (x == null || y == null) return (x == null) - (y == null);
@@ -137,7 +140,7 @@ function applyFilters() {
   const q = $("f-search").value.trim().toLowerCase();
   const week = $("f-week").value, team = $("f-team").value, game = $("f-game").value;
   const quarter = $("f-quarter").value, down = $("f-down").value, type = $("f-type").value;
-  const cov = $("f-cov").value, sort = $("f-sort").value;
+  const cov = $("f-cov").value, sort = $("f-sort").value, dec = $("f-dec").value;
   const qb = $("f-qb").value.trim().toLowerCase(), rec = $("f-rec").value.trim().toLowerCase();
   const terms = q.split(/\s+/).filter(Boolean);
   S.filtered = S.index.filter((e) =>
@@ -148,11 +151,13 @@ function applyFilters() {
     (!down || e.dn === +down) &&
     (!type || e.type === type) &&
     (!cov || e.cov === cov) &&
+    (!dec || e.dec === dec) &&
     (!qb || (e.qb || "").toLowerCase().includes(qb)) &&
     (!rec || (e.rec || "").toLowerCase().includes(rec)) &&
     (!terms.length || terms.every((t) => (e.desc || "").toLowerCase().includes(t))));
   if (SORTS[sort]) S.filtered.sort(SORTS[sort]); // stable: ties stay in game order
   renderList();
+  renderLeague();
 }
 
 function downText(dn, ytg) {
@@ -238,6 +243,7 @@ async function selectPlay(e, startFrame = null) {
       "recorded landing spot (✕). Faded players weren't tracked after the throw and are shown where they were last seen."
     : "";
   renderTicks();
+  renderPlayAnalysis();
   if (startFrame != null) { setFrame(startFrame); setPlaying(false); }
   else setPlaying(true);
 }
@@ -325,6 +331,36 @@ function position(ent, t) {
   if (x == null || y == null) return null;
   if (flipped()) { x = FIELD_LEN - x; y = FIELD_WID - y; }
   return [x, y];
+}
+
+function drawSeparation(play, t, R) {
+  const open = S.analysisCfg?.open ?? 3;
+  const pts = (roles) => play.players.map((p, i) => roles.includes(p.role) ? [i, position(i, t)] : null)
+    .filter((v) => v && v[1]);
+  const defs = pts(["Defensive Coverage"]);
+  if (!defs.length) return;
+  ctx.font = `700 ${Math.max(10, R * 0.75)}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const [, [rx, ry]] of pts(["Targeted Receiver", "Other Route Runner"])) {
+    let best = null, bd = Infinity;
+    for (const [, [dx, dy]] of defs) {
+      const d = Math.hypot(dx - rx, dy - ry);
+      if (d < bd) { bd = d; best = [dx, dy]; }
+    }
+    const [ax, ay] = toPx(rx, ry), [bx, by] = toPx(best[0], best[1]);
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = bd >= open ? "rgba(120,230,150,.85)" : "rgba(255,140,120,.85)";
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.setLineDash([]);
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,.8)";
+    ctx.strokeText(bd.toFixed(1), mx, my);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(bd.toFixed(1), mx, my);
+  }
 }
 
 // Last tracked position at or before frame t (for players whose tracking stops at the throw).
@@ -526,6 +562,9 @@ function draw() {
     ctx.globalAlpha = 1;
   }
 
+  // Separation lines: each route runner to the nearest coverage defender, live until the throw
+  if ($("opt-sep").checked && play.analysis && S.anchor && t <= S.anchor.f + 1e-6) drawSeparation(play, t, R);
+
   // Ball landing spot (2026 data)
   if (play.ballLand) {
     let [lx, ly] = play.ballLand;
@@ -697,7 +736,7 @@ function frame(ts) {
 }
 
 // ---------- events ----------
-for (const id of ["f-search", "f-quarter", "f-down", "f-type", "f-game", "f-cov", "f-sort", "f-qb", "f-rec"]) {
+for (const id of ["f-search", "f-quarter", "f-down", "f-type", "f-game", "f-cov", "f-sort", "f-qb", "f-rec", "f-dec"]) {
   $(id).addEventListener("input", applyFilters);
 }
 for (const id of ["f-week", "f-team"]) {
