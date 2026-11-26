@@ -37,6 +37,12 @@ AIR_BASE, AIR_PER_YARD, PROJ_CAP = 0.08, 0.049, 1.0
 OPEN = 3.0       # yards of projected separation to call a receiver "open"
 MARGIN = 1.0     # within this many yards of the most open receiver counts as "most open"
 SHALLOWER = 2.0  # an alternative this many yards shallower than the target is a "shorter option"
+# The data lists every eligible player as a route runner, including RBs/TEs/FBs who stayed in to
+# pass block. Those sit in the pocket far from coverage defenders and would look "wide open".
+# Blocker signature: never got more than 1 yd past the line, and at the throw is still behind it,
+# within 5 yd of the QB and nearly stopped (< 2.5 yd/s). Only ~1 in 40 such players is ever targeted.
+BLOCK_POS = {"RB", "TE", "FB"}
+BLOCK_MAX_DEPTH, BLOCK_NEAR_QB, BLOCK_MAX_SPEED = 1.0, 5.0, 2.5
 
 DECISIONS = {
     "most_open": "Threw to the most open receiver",
@@ -63,8 +69,16 @@ def analyze_decision(inp: pd.DataFrame, direction: str, los):
         return df["x"].to_numpy() + df["s"].to_numpy() * np.sin(rad) * t, \
                df["y"].to_numpy() + df["s"].to_numpy() * np.cos(rad) * t
 
+    max_depth = ((inp["x"] - los) * sign).groupby(inp["nfl_id"]).max()
+
     recs = []
     for _, r in rr.iterrows():
+        depth = (r["x"] - los) * sign
+        blocking = bool(
+            r["player_role"] != "Targeted Receiver" and r["player_position"] in BLOCK_POS
+            and max_depth[r["nfl_id"]] < BLOCK_MAX_DEPTH and depth < 0
+            and np.hypot(r["x"] - qx, r["y"] - qy) < BLOCK_NEAR_QB and r["s"] < BLOCK_MAX_SPEED
+        )
         sep_throw = np.hypot(de["x"] - r["x"], de["y"] - r["y"]).min()
         air = float(np.clip(AIR_BASE + AIR_PER_YARD * np.hypot(r["x"] - qx, r["y"] - qy), 0.3, 3.0))
         t = min(air, PROJ_CAP)
@@ -78,9 +92,11 @@ def analyze_decision(inp: pd.DataFrame, direction: str, los):
             "target": r["player_role"] == "Targeted Receiver",
             "sepThrow": round(float(sep_throw), 2),
             "sep": round(float(np.hypot(dx - rx, dy - ry).min()), 2),
-            "depth": round(float((r["x"] - los) * sign), 1),
+            "depth": round(float(depth), 1),
+            "blocking": blocking,
         })
-    recs.sort(key=lambda r: -r["sep"])
+    # Route runners by openness; pass blockers listed last and left out of the comparison
+    recs.sort(key=lambda r: (r["blocking"], -r["sep"]))
     best, tgt = recs[0], next(r for r in recs if r["target"])
 
     if tgt["sep"] >= best["sep"] - MARGIN:
@@ -88,7 +104,8 @@ def analyze_decision(inp: pd.DataFrame, direction: str, los):
     elif tgt["sep"] >= OPEN:
         dec = "open_target"
     else:
-        alts = [r for r in recs if not r["target"] and r["sep"] >= tgt["sep"] + MARGIN and r["sep"] >= OPEN]
+        alts = [r for r in recs if not r["target"] and not r["blocking"]
+                and r["sep"] >= tgt["sep"] + MARGIN and r["sep"] >= OPEN]
         if not alts:
             dec = "all_covered"
         elif any(a["depth"] >= tgt["depth"] - SHALLOWER for a in alts):
@@ -231,7 +248,9 @@ def main():
             if a:
                 tgt = next(r for r in a["receivers"] if r["target"])
                 entry.update(dec=a["decision"], tsep=tgt["sep"], msep=a["receivers"][0]["sep"],
-                             tdep=tgt["depth"], ttt=a["timeToThrow"], nrr=len(a["receivers"]))
+                             tdep=tgt["depth"], ttt=a["timeToThrow"],
+                             nrr=sum(not r["blocking"] for r in a["receivers"]),
+                             nblk=sum(r["blocking"] for r in a["receivers"]))
             index.append(entry)
 
     index.sort(key=lambda e: (e["g"], e["p"]))

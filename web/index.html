@@ -16,7 +16,10 @@
       <input id="f-search" type="search" placeholder="Search descriptions (e.g. Mahomes, touchdown)">
       <div class="row">
         <select id="f-week"><option value="">All weeks</option></select>
-        <select id="f-team"><option value="">All teams</option></select>
+        <div class="picker" id="pk-team">
+          <input id="f-team-text" type="search" placeholder="All teams" autocomplete="off">
+          <input id="f-team" type="hidden">
+        </div>
       </div>
       <select id="f-game"><option value="">All games</option></select>
       <div class="row">
@@ -36,11 +39,9 @@
         </select>
       </div>
       <div class="row" id="people-row">
-        <input id="f-qb" type="search" list="qb-list" placeholder="Quarterback">
-        <input id="f-rec" type="search" list="rec-list" placeholder="Receiver">
+        <div class="picker" id="pk-qb"><input id="f-qb" type="search" placeholder="Quarterback" autocomplete="off"></div>
+        <div class="picker" id="pk-rec"><input id="f-rec" type="search" placeholder="Receiver" autocomplete="off"></div>
       </div>
-      <datalist id="qb-list"></datalist>
-      <datalist id="rec-list"></datalist>
       <div class="row">
         <select id="f-cov"><option value="">Any coverage</option></select>
         <select id="f-sort" title="Sort plays">
@@ -110,17 +111,20 @@
 
     <section id="league" class="card" hidden>
       <h2>QB decision-making across the league</h2>
+      <div class="filter-bar" id="lg-filters"></div>
       <p class="hint" id="lg-scope"></p>
       <div id="lg-tiles" class="tiles"></div>
       <ul id="lg-findings" class="findings"></ul>
       <div class="chart-grid">
         <div>
           <h3>Completion rate by how open the target was</h3>
+          <p class="chart-scope"></p>
           <div id="lg-sepchart" class="vbars"></div>
           <p class="axis-note">Target's projected separation at arrival (yards)</p>
         </div>
         <div>
           <h3>Where the ball went</h3>
+          <p class="chart-scope"></p>
           <div id="lg-decisions" class="hbars"></div>
         </div>
       </div>
@@ -130,6 +134,7 @@
         <button data-tab="down">By down</button>
         <button data-tab="ttt">By time to throw</button>
       </div>
+      <p class="chart-scope"></p>
       <p class="hint" id="lg-table-note"></p>
       <div class="table-wrap"><table id="lg-table" class="data sortable"></table></div>
       <details class="method">
@@ -144,6 +149,11 @@
           open, an open alternative (≥ <span data-cfg="open"></span> yd, and ≥ <span data-cfg="margin"></span> yd more open)
           at a similar or greater depth is a <b>missed open receiver</b>; if the only open alternatives were
           at least <span data-cfg="shallower"></span> yd shallower, the QB <b>chose depth</b> over a checkdown.</p>
+        <p><b>Pass blockers:</b> the data lists every eligible player as a route runner, including RBs, TEs and
+          fullbacks who stayed in to block. Standing in the pocket far from coverage defenders, they would look wide
+          open. A back or tight end who never got more than 1 yd past the line and, at the throw, is still behind it,
+          within 5 yd of the QB and nearly stopped (under 2.5 yd/s) is treated as a pass blocker and left out of the
+          comparison. They're still listed, marked "Pass blocking", in the play table.</p>
         <p><b>Limits:</b> this sees only route runners and coverage defenders (no pass rush), so it can't tell when
           pressure forced the throw, a receiver hadn't turned around yet, or the play call dictated the read.
           Treat it as a guide to interesting plays, not a final grade.</p>
@@ -152,6 +162,7 @@
   </main>
 
   <script src="teams.js"></script>
+  <script src="picker.js"></script>
   <script src="app.js"></script>
   <script src="analysis.js"></script>
 </body>

@@ -77,18 +77,19 @@ function gameLabel(e) {
 function buildFilterOptions() {
   const weeks = [...new Set(S.index.map((e) => e.w))].sort((a, b) => a - b);
   $("f-week").append(...weeks.map((w) => new Option(`Week ${w}`, w)));
-  const teams = [...new Set(S.index.flatMap((e) => [e.home, e.away]).filter(Boolean))].sort();
-  $("f-team").append(...teams.map((t) => new Option(t, t)));
+  const teams = [...new Set(S.index.flatMap((e) => [e.home, e.away]).filter(Boolean))]
+    .sort((a, b) => (TEAM_NAMES[a] ?? a).localeCompare(TEAM_NAMES[b] ?? b));
+  initTeamPicker(teams);
 
   // Coverage, quarterback and receiver choices (only shown if this dataset has them)
   const values = (k) => [...new Set(S.index.map((e) => e[k]).filter(Boolean))];
   const covs = values("cov").sort();
   $("f-cov").append(...covs.map((c) => new Option(pretty(c), c)));
   $("f-cov").hidden = !covs.length;
-  const byLast = (a, b) => lastName(a).localeCompare(lastName(b)) || a.localeCompare(b);
-  const qbs = values("qb").sort(byLast), recs = values("rec").sort(byLast);
-  $("qb-list").replaceChildren(...qbs.map((n) => new Option(n)));
-  $("rec-list").replaceChildren(...recs.map((n) => new Option(n)));
+  const qbs = values("qb"), recs = values("rec");
+  S.playerTeams = { qb: playerTeams("qb"), rec: playerTeams("rec") };
+  initPlayerPicker($("f-qb"), S.playerTeams.qb, "pass");
+  initPlayerPicker($("f-rec"), S.playerTeams.rec, "target");
   $("people-row").hidden = !qbs.length && !recs.length;
   for (const v of ["qb", "rec"]) {
     $("f-sort").querySelector(`[value=${v}]`).hidden = !values(v).length;
@@ -97,6 +98,52 @@ function buildFilterOptions() {
   // Every play the same type (e.g. the pass-only 2026 data)? Then the type filter is pointless.
   $("f-type").hidden = new Set(S.index.map((e) => e.type)).size <= 1;
   refreshGameOptions();
+}
+
+// name -> [[team, plays], ...] (most plays first); players can change teams mid-season
+function playerTeams(key) {
+  const m = new Map();
+  for (const e of S.index) {
+    if (!e[key] || !e.off) continue;
+    if (!m.has(e[key])) m.set(e[key], new Map());
+    const t = m.get(e[key]);
+    t.set(e.off, (t.get(e.off) ?? 0) + 1);
+  }
+  return new Map([...m].map(([name, t]) => [name, [...t].sort((a, b) => b[1] - a[1])]));
+}
+
+function initTeamPicker(teams) {
+  const text = $("f-team-text"), hidden = $("f-team");
+  const label = (t) => TEAM_NAMES[t] ?? t;
+  const items = teams.map((t) => ({
+    value: t, text: label(t), search: `${label(t)} ${t}`.toLowerCase(), icon: teamLogo(t),
+    html: `${teamLogo(t)}<span class="pk-name">${esc(TEAM_NAMES[t] ?? t)}</span><span class="pk-sub">${t}</span>`,
+  }));
+  makePicker(text, {
+    items: () => items,
+    onPick: (it) => { hidden.value = it.value; hidden.dispatchEvent(new Event("input")); },
+  });
+  // Typing over (or clearing) a picked team removes the team filter until a new one is picked
+  text.addEventListener("input", () => {
+    if (hidden.value && text.value !== label(hidden.value)) {
+      hidden.value = "";
+      hidden.dispatchEvent(new Event("input"));
+    }
+  });
+}
+
+function initPlayerPicker(input, teamsByName, noun) {
+  const items = [...teamsByName].sort((a, b) => lastName(a[0]).localeCompare(lastName(b[0])) || a[0].localeCompare(b[0]))
+    .map(([name, teams]) => {
+      const n = teams.reduce((s, [, c]) => s + c, 0);
+      return {
+        value: name, text: name, icon: teamLogo(teams[0][0]), search: `${name} ${teams.map(([t]) => `${t} ${TEAM_NAMES[t] ?? ""}`).join(" ")}`.toLowerCase(),
+        html: `<span class="pk-logos">${teams.map(([t]) => teamLogo(t)).join("")}</span>` +
+          `<span class="pk-name">${esc(name)}</span>` +
+          `<span class="pk-sub">${teams.map(([t]) => t).join(", ")} · ${n} ${n === 1 ? noun : noun === "pass" ? "passes" : noun + "s"}</span>`,
+      };
+    });
+  makePicker(input, { items: () => items, onPick: () => input.dispatchEvent(new Event("input")) });
 }
 
 function lastName(name) {
@@ -335,7 +382,8 @@ function position(ent, t) {
 
 function drawSeparation(play, t, R) {
   const open = S.analysisCfg?.open ?? 3;
-  const pts = (roles) => play.players.map((p, i) => roles.includes(p.role) ? [i, position(i, t)] : null)
+  const blockers = new Set(play.analysis.receivers.filter((r) => r.blocking).map((r) => r.id));
+  const pts = (roles) => play.players.map((p, i) => roles.includes(p.role) && !blockers.has(p.id) ? [i, position(i, t)] : null)
     .filter((v) => v && v[1]);
   const defs = pts(["Defensive Coverage"]);
   if (!defs.length) return;

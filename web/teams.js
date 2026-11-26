@@ -12,3 +12,26 @@ const TEAM_COLORS = {
   SEA: ["#002244", "#69BE28"], SF: ["#AA0000", "#B3995D"], TB: ["#D50A0A", "#34302B"],
   TEN: ["#0C2340", "#4B92DB"], WAS: ["#5A1414", "#FFB612"],
 };
+
+const TEAM_NAMES = {
+  ARI: "Arizona Cardinals", ATL: "Atlanta Falcons", BAL: "Baltimore Ravens", BUF: "Buffalo Bills",
+  CAR: "Carolina Panthers", CHI: "Chicago Bears", CIN: "Cincinnati Bengals", CLE: "Cleveland Browns",
+  DAL: "Dallas Cowboys", DEN: "Denver Broncos", DET: "Detroit Lions", GB: "Green Bay Packers",
+  HOU: "Houston Texans", IND: "Indianapolis Colts", JAX: "Jacksonville Jaguars", KC: "Kansas City Chiefs",
+  LA: "Los Angeles Rams", LAC: "Los Angeles Chargers", LV: "Las Vegas Raiders", MIA: "Miami Dolphins",
+  MIN: "Minnesota Vikings", NE: "New England Patriots", NO: "New Orleans Saints", NYG: "New York Giants",
+  NYJ: "New York Jets", PHI: "Philadelphia Eagles", PIT: "Pittsburgh Steelers", SEA: "Seattle Seahawks",
+  SF: "San Francisco 49ers", TB: "Tampa Bay Buccaneers", TEN: "Tennessee Titans", WAS: "Washington Commanders",
+};
+
+// Logos come from ESPN's public logo server (not stored in this repo). If one can't load
+// (offline, blocked), the team-colored badge with the abbreviation underneath shows instead.
+const ESPN_CODES = { LA: "lar", WAS: "wsh" };
+function teamLogo(team) {
+  if (!team) return "";
+  const [bg] = TEAM_COLORS[team] ?? ["#555"];
+  const src = `https://a.espncdn.com/i/teamlogos/nfl/500/${(ESPN_CODES[team] ?? team).toLowerCase()}.png`;
+  return `<span class="logo" style="--team:${bg}" title="${TEAM_NAMES[team] ?? team}">` +
+    `<b>${team}</b><img src="${src}" alt="" loading="lazy" ` +
+    `onload="this.parentNode.classList.add('ok')" onerror="this.remove()"></span>`;
+}

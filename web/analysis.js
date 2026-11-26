@@ -71,14 +71,63 @@ function groupBy(rows, keyFn) {
   return m;
 }
 
+// ---------- active filters, shown above the charts ----------
+function activeFilters() {
+  const out = [];
+  const sel = (id) => $(id).selectedOptions[0]?.text ?? $(id).value;
+  const add = (id, html, text) => { if ($(id).value) out.push({ id, html, text }); };
+  const search = $("f-search").value.trim();
+  add("f-search", `Search: “${esc(search)}”`, `“${search}”`);
+  add("f-week", esc(sel("f-week")), sel("f-week"));
+  const t = $("f-team").value;
+  add("f-team", `${teamLogo(t)} ${esc(TEAM_NAMES[t] ?? t)}`, TEAM_NAMES[t] ?? t);
+  add("f-game", esc(sel("f-game")), sel("f-game"));
+  add("f-quarter", esc(sel("f-quarter")), sel("f-quarter"));
+  add("f-down", `${esc(sel("f-down"))} down`, `${sel("f-down")} down`);
+  if (!$("f-type").hidden) add("f-type", esc(sel("f-type")), sel("f-type"));
+  for (const [id, key, label] of [["f-qb", "qb", "QB"], ["f-rec", "rec", "Receiver"]]) {
+    const v = $(id).value.trim();
+    const teams = S.playerTeams?.[key]?.get(v) ?? [];
+    add(id, `${teams.map(([tm]) => teamLogo(tm)).join("")} ${label}: ${esc(v)}`, `${label} ${v}`);
+  }
+  add("f-cov", esc(sel("f-cov")), sel("f-cov"));
+  add("f-dec", esc(sel("f-dec")), sel("f-dec").replace(/^\S+ /, ""));
+  return out;
+}
+
+function clearFilter(id) {
+  $(id).value = "";
+  if (id === "f-team") $("f-team-text").value = "";
+  const box = id === "f-team" ? $("f-team-text") : $(id);
+  if (box.closest(".picker")) box.dispatchEvent(new Event("input")); // drop the logo in the box
+  if (id === "f-week" || id === "f-team") refreshGameOptions();
+}
+
+function renderFilterBar() {
+  const f = activeFilters();
+  $("lg-filters").innerHTML = (f.length
+    ? `<span class="fb-label">Filtered to:</span>` + f.map((x) =>
+        `<span class="chip">${x.html}<button data-id="${x.id}" title="Remove this filter" aria-label="Remove filter">×</button></span>`).join("") +
+      `<button class="clear-all">Clear all</button>`
+    : `<span class="fb-label">Showing all plays.</span> <span class="hint">Use the filters on the left to narrow this to a team, QB, receiver, down or coverage.</span>`);
+  for (const b of $("lg-filters").querySelectorAll(".chip button")) {
+    b.addEventListener("click", () => { clearFilter(b.dataset.id); applyFilters(); });
+  }
+  $("lg-filters").querySelector(".clear-all")?.addEventListener("click", () => {
+    for (const x of f) clearFilter(x.id);
+    applyFilters();
+  });
+  const scope = f.length ? `For: ${f.map((x) => x.text).join(" · ")}` : "For: all plays";
+  for (const p of document.querySelectorAll("#league .chart-scope")) p.textContent = scope;
+}
+
 // ---------- league section ----------
 function renderLeague() {
   if ($("league").hidden) return;
   const rows = S.filtered.filter((e) => e.dec);
   const all = agg(rows);
-  $("lg-scope").textContent = S.filtered.length === S.index.length
-    ? `All ${rows.length.toLocaleString()} pass plays. Use the filters on the left to narrow this to a team, week, down, QB or coverage.`
-    : `${rows.length.toLocaleString()} pass plays matching your filters.`;
+  renderFilterBar();
+  $("lg-scope").textContent = `${rows.length.toLocaleString()} pass plays${S.filtered.length === S.index.length ? "" : " match these filters"}.`;
   if (!rows.length) {
     for (const id of ["lg-tiles", "lg-findings", "lg-sepchart", "lg-decisions", "lg-table"]) $(id).replaceChildren();
     $("lg-table-note").textContent = "";
@@ -163,7 +212,7 @@ function renderTable(rows) {
     minN = rows.length > 3000 ? 100 : rows.length > 500 ? 30 : 5;
     groups = groupBy(rows, (e) => e.qb);
     label = "Quarterback";
-    onPick = (k) => { $("f-qb").value = k; applyFilters(); };
+    onPick = (k) => { $("f-qb").value = k; $("f-qb").dispatchEvent(new Event("input")); };
     note = `Quarterbacks with at least ${minN} passes. Click a column to sort, or a row to filter to that QB.`;
   } else if (LG.tab === "cov") {
     groups = groupBy(rows, (e) => e.cov);
@@ -253,10 +302,12 @@ function renderPlayAnalysis() {
     `<thead><tr><th>Receiver</th><th>Pos</th><th class="num">Depth</th><th class="num">Separation at throw</th>` +
     `<th>Projected at arrival</th><th></th></tr></thead><tbody>` +
     recs.map((r) => {
-      const tags = [r.target ? `<span class="pill target">Target</span>` : "", r.mostOpen ? `<span class="pill">Most open</span>` : ""].join(" ");
-      return `<tr data-id="${r.id}" class="${r.target ? "is-target" : ""}"><td>${esc(r.name)}</td><td>${esc(r.pos ?? "")}</td>` +
+      const tags = [r.target ? `<span class="pill target">Target</span>` : "", r.mostOpen ? `<span class="pill">Most open</span>` : "",
+        r.blocking ? `<span class="pill">Pass blocking (not compared)</span>` : ""].join(" ");
+      const cls = [r.target ? "is-target" : "", r.blocking ? "is-blocking" : ""].join(" ");
+      return `<tr data-id="${r.id}" class="${cls}"><td>${esc(r.name)}</td><td>${esc(r.pos ?? "")}</td>` +
         `<td class="num">${num(r.depth)} yd</td><td class="num">${num(r.sepThrow)} yd</td>` +
-        `<td><span class="cell-bar wide ${r.sep >= c.open ? "open" : ""}"><span style="width:${(r.sep / maxSep) * 100}%"></span></span>${num(r.sep)} yd</td>` +
+        `<td><span class="cell-bar wide ${r.sep >= c.open && !r.blocking ? "open" : ""}"><span style="width:${(r.sep / maxSep) * 100}%"></span></span>${num(r.sep)} yd</td>` +
         `<td>${tags}</td></tr>`;
     }).join("") + "</tbody>";
   for (const tr of $("pa-table").querySelectorAll("tbody tr")) {
